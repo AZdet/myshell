@@ -29,7 +29,7 @@ typedef enum {
 } 
 COMMEND;
 
-char CMDS[][MAX_CMD_LEN+1] = {"cd","clr","dir","echo", 
+char Internal_CMDS[][MAX_CMD_LEN+1] = {"cd","clr","dir","echo", 
 "environ","help","pwd","quit","time","umask",
 "bg","fg", "jobs","exec","set","shift","test","unset"};
 
@@ -41,7 +41,10 @@ int is_pipe(char* cmd,int cmdlen); 		/*解析管道命令*/
 int is_io_redirect(char* cmd,int cmdlen);   /*解析重定向*/
 int normal_cmd(char* cmd,int cmdlen,int infd,int outfd,int fork);  /*执行普通命令*/
 /*其他函数……. */
-char cmd[MAX_LINE + 1]; // + 1 for '\0'
+
+char cmd[MAX_LINE + 1]; // + 1 for '\0'，记录总的命令
+char *ptr_subcmd[MAX_LINE];  // 在parse之后，记录每个子命令开始的位置
+int subcmd_len[MAX_LINE]; //　配合上面的指针，在parse之后，记录每个子命令的长度
 
 void init(){
     /*设置命令提示符*/
@@ -56,11 +59,19 @@ int readcommand(){
     fgets(cmd, MAX_LINE, stdin);
     int len = strlen(cmd);
     char *tok;
+    int cmd_len, idx =0;
     // structure of a command
     // cmd args [| cmd args]* [[< filename] [> filename]  [>> filename]]* [&]  
     tok = strtok(cmd, " ");
+    ptr_subcmd[idx++] = tok;
     while (tok){
         tok = strtok(NULL, " ");
+        if (!tok)
+            break;
+        if (strcmp(tok, "|") && strcmp(tok, "<") && strcmp(tok, ">")  // tok is a subcmd 
+        && strcmp(tok, ">>") && strcmp(tok, "&")) {
+            ptr_subcmd[idx++] = tok;
+        }
     }
 }
 

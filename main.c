@@ -24,6 +24,7 @@
 //     quit,
 //     time,
 //     umask,
+//     exit,
 // // manage processes
 //     bg,
 //     fg, 
@@ -38,7 +39,7 @@
 // COMMEND;
 
 char Internal_CMDS[][MAX_CMD_LEN+1] = {"cd","clr","dir","echo", 
-"environ","help","pwd","quit","time","umask",
+"environ", "exit", "help","pwd","quit","time","umask", 
 "bg","fg", "jobs","exec","set","shift","test","unset"};
 
 
@@ -154,6 +155,26 @@ int do_internal_cmd(char **argv){
         for (char **env = environ; *env; env++)
             printf("%s\n", *env);
     }
+    else if (!strcmp(argv[0], "exit")){
+        if (!argv[1]){
+            fprintf(stderr, "Error: umask takes one argument!");
+            is_error = 1;
+            return 1;
+        }
+        else if (argv[2]){
+            fprintf(stderr, "Error: umask takes only one argument!");
+            is_error = 1;
+            return 1;
+        }
+        int ret_code, ret;
+        ret = sscanf(argv[1], "%d", &ret_code);
+        if (ret != 1){
+            fprintf(stderr, "Error: invalid return code after exit!");
+            is_error = 1;
+            return 1;
+        }
+        exit(ret_code);
+    }
     else if (!strcmp(argv[0], "help")){
         if (argv[1]){
             fprintf(stderr, "Error: help takes no argument!");
@@ -225,7 +246,7 @@ int do_internal_cmd(char **argv){
         
     }
     else if (!strcmp(argv[0], "exec")){
-        
+        execvp(argv[1], &argv[1]);
     }
     else if (!strcmp(argv[0], "set")){
         if (!argv[1] || !argv[2]){
@@ -246,7 +267,8 @@ int do_internal_cmd(char **argv){
         }
     }
     else if (!strcmp(argv[0], "shift")){
-        
+        // get $#
+        // n+1 ... # --> 1 ... #-n+1
     }
     else if (!strcmp(argv[0], "test")){     //TODO: bg, fg, jobs, test, shift, exec
         

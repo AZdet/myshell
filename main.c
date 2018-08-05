@@ -3,35 +3,39 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <time.h>
 #define MAX_LINE 80 /* The maximum length command */
 #define MAX_CMD_LEN 7
 #define MAX_JOBS 30
-typedef enum {
-// basic functionality
-    cd,
-    clr,
-    dir,
-    echo,   
-    environ,
-    help,
-    pwd,
-    quit,
-    time,
-    umask,
-// manage processes
-    bg,
-    fg, 
-    jobs,
-    exec,
-// shell programming
-    set,
-    shift,
-    test,
-    unset
-} 
-COMMEND;
+// typedef enum {
+// // basic functionality
+//     cd,
+//     clr,
+//     dir,
+//     echo,   
+//     environ,
+//     help,
+//     pwd,
+//     quit,
+//     time,
+//     umask,
+// // manage processes
+//     bg,
+//     fg, 
+//     jobs,
+//     exec,
+// // shell programming
+//     set,
+//     shift,
+//     test,
+//     unset
+// } 
+// COMMEND;
 
 char Internal_CMDS[][MAX_CMD_LEN+1] = {"cd","clr","dir","echo", 
 "environ","help","pwd","quit","time","umask",
@@ -75,38 +79,141 @@ int should_run = 1; /* flag to determine when to exit program */
 //     /*……*/
 // }
 int do_internal_cmd(char **argv){
-    int i;
+    int i, ret;
     if (!strcmp(argv[0], "cd")){
-        
+        if (!argv[1]){
+            char *cur_path = getcwd(NULL, 0);
+            printf("current path is: %s\n", cur_path);
+            free(cur_path);
+        }
+        else{
+            if (argv[2]){
+                fprintf(stderr, "Error: cd only takes one argument!");
+                is_error = 1;
+                return 1;
+            }
+            ret = chdir(argv[1]);
+        }
+        if (!ret){
+            perror("chdir");
+            return 1;
+        }
     }
     else if (!strcmp(argv[0], "cls")){
-
+        if (argv[1]){
+            fprintf(stderr, "Error: cls takes no argument!");
+            is_error = 1;
+            return 1;
+        }
+        printf("\033c"); // 特殊的terminal code，可以通过man console_codes查看详情
     }
     else if (!strcmp(argv[0], "dir")){
-        
+       if (!argv[1]){
+            fprintf(stderr, "Error: dir takes one argument!");
+            is_error = 1;
+            return 1;
+        }
+        else if (argv[2]){
+            fprintf(stderr, "Error: dir takes only one argument!");
+            is_error = 1;
+            return 1;
+        }
+        DIR *dir = opendir(argv[1]);
+        if (!dir){
+            perror("opendir");
+            is_error = 1;
+            return 1;
+        }
+        struct dirent *ent;
+        while ((ent = readdir(dir))){
+            if (ent->d_name[0] != '.')
+                printf("%s ", ent->d_name);
+        }
+        printf("\n");
     }
     else if (!strcmp(argv[0], "echo")){
-        
+        if (!argv[1]){
+            fprintf(stderr, "Error: echo takes one argument!");
+            is_error = 1;
+            return 1;
+        }
+        else if (argv[2]){
+            fprintf(stderr, "Error: echo takes only one argument!");
+            is_error = 1;
+            return 1;
+        }
+        printf(argv[1]);
     }
     else if (!strcmp(argv[0], "environ")){
-        
+        if (argv[1]){
+            fprintf(stderr, "Error: help takes no argument!");
+            is_error = 1;
+            return 1;
+        }
+        extern char **environ;
+        for (char **env = environ; *env; env++)
+            printf("%s\n", *env);
     }
     else if (!strcmp(argv[0], "help")){
+        if (argv[1]){
+            fprintf(stderr, "Error: help takes no argument!");
+            is_error = 1;
+            return 1;
+        }
         system("cat readme | more");
     }
     else if (!strcmp(argv[0], "pwd")){
+        if (argv[1]){
+            fprintf(stderr, "Error: pwd takes no argument!");
+            is_error = 1;
+            return 1;
+        }
         char *pwd = getcwd(NULL, 0);
         printf("%s\n", pwd);
         free(pwd);
     }
     else if (!strcmp(argv[0], "quit")){
+        if (argv[1]){
+            fprintf(stderr, "Error: quit takes no argument!");
+            is_error = 1;
+            return 1;
+        }
         should_run = 0;
     }
     else if (!strcmp(argv[0], "time")){
-        
+        if (argv[1]){
+            fprintf(stderr, "Error: time takes no argument!");
+            is_error = 1;
+            return 1;
+        }
+        time_t rawtime;
+        struct tm *timeinfo;
+        time(&rawtime);
+        timeinfo = localtime(&rawtime);
+        printf("Current local time and date: %s", asctime (timeinfo));
     }
     else if (!strcmp(argv[0], "umask")){
-        
+        if (!argv[1]){
+            fprintf(stderr, "Error: umask takes one argument!");
+            is_error = 1;
+            return 1;
+        }
+        else if (argv[2]){
+            fprintf(stderr, "Error: umask takes only one argument!");
+            is_error = 1;
+            return 1;
+        }
+        mode_t mode;
+        int ret;
+        ret = sscanf(argv[1], "%o", &mode);
+        if (ret == 1 && mode >= 0 && mode <= 0777){
+            umask(mode);
+        }
+        else{
+            fprintf(stderr, "Error: invalid umask mode!");
+            is_error = 1;
+            return 1;  
+        }
     }
     else if (!strcmp(argv[0], "bg")){
         
@@ -121,18 +228,48 @@ int do_internal_cmd(char **argv){
         
     }
     else if (!strcmp(argv[0], "set")){
-        
+        if (!argv[1] || !argv[2]){
+            fprintf(stderr, "Error: set takes two arguments!");
+            is_error = 1;
+            return 1;
+        }
+        else if (argv[3]){
+            fprintf(stderr, "Error: set takes only two arguments!");
+            is_error = 1;
+            return 1;
+        }
+        int ret = setenv(argv[1], argv[2], 1);   // overwrite = 1
+        if (!ret){
+            perror("setenv");
+            is_error = 1;
+            return 1;
+        }
     }
     else if (!strcmp(argv[0], "shift")){
         
     }
-    else if (!strcmp(argv[0], "test")){
+    else if (!strcmp(argv[0], "test")){     //TODO: bg, fg, jobs, test, shift, exec
         
     }
     else if (!strcmp(argv[0], "unset")){
-        
+        if (!argv[1]){
+            fprintf(stderr, "Error: unset takes one argument!");
+            is_error = 1;
+            return 1;
+        }
+        else if (argv[2]){
+            fprintf(stderr, "Error: unset takes only one argument!");
+            is_error = 1;
+            return 1;
+        }
+        int ret = unsetenv(argv[1]);
+        if (!ret){
+            perror("unsetenv");
+            is_error = 1;
+            return 1;
+        }
     }
-
+    return 0;
 }
 
 int readCmd(){

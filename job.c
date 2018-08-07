@@ -2,9 +2,7 @@
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <errno.h>
-#define DISPLAY_LEN 20
-#define MAXJOBS 30
+#include "job.h"
 
 int nextjid = 1;
 
@@ -24,7 +22,6 @@ typedef struct
     char cmdline[DISPLAY_LEN];
 } job_t;
 
-job_t job_table[MAXJOBS];
 
 /* clearjob - Clear the entries in a job struct */
 void clearjob(job_t *job)
@@ -182,108 +179,16 @@ void listjob_table(job_t *job_table)
     }
 }
 
-void sigint_handler(int sig)
-{
-    pid_t pid = fgpid(job_table);
-
-    if (pid != 0)
-    {
-        kill(-pid, sig);
-    }
-    return;
-}
-void sigtstp_handler(int sig)
-{
-    pid_t pid = fgpid(job_table);
-    //check for valid pid
-    if (pid != 0)
-    {
-        kill(-pid, sig);
-    }
-    return;
-}
-void sigchld_handler(int sig)
-{
-    int status;
-    pid_t pid;
-
-    while ((pid = waitpid(fgpid(job_table), &status, WNOHANG | WUNTRACED)) > 0)
-    {
-        if (WIFSTOPPED(status))
-        {
-            //change state if stopped
-            getjobpid(job_table, pid)->state = ST;
-            int jid = pid2jid(pid);
-            printf("Job [%d] (%d) Stopped by signal %d\n", jid, pid, WSTOPSIG(status));
-        }
-        else if (WIFSIGNALED(status))
-        {
-            //delete is signaled
-            int jid = pid2jid(pid);
-            printf("Job [%d] (%d) terminated by signal %d\n", jid, pid, WTERMSIG(status));
-            deletejob(job_table, pid);
-        }
-        else if (WIFEXITED(status))
-        { // child terminated normally
-            //exited
-            deletejob(job_table, pid);
-        }
-    }
-    return;
-}
-
-void sigchld_handler(int sig)
-{
-    pid_t pid;
-    int status;
-    job_t *job;
-
-    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0)
-    { // wait
-        if (WIFSIGNALED(status))
-        { // child process was terminated by a signal
-            if (WTERMSIG(status) == SIGINT)
-            { // the number of the signal that caused the child process to terminate
-                printf("Job [%d] (%d) terminated by signal %d\n",
-                       pid2jid(pid), pid, WTERMSIG(status));
-                deletejob(job_table, pid);
-            }
-        }
-        else if (WIFSTOPPED(status))
-        { // the child process was stopped by delivery of a signal;
-            job = getjobpid(job_table, pid);
-            job->state = ST;
-            printf("Job [%d] (%d) stopped by signal %d\n",
-                   pid2jid(pid), pid, WSTOPSIG(status));
-        }
-        else
-            deletejob(job_table, pid);
-    }
-    if (pid == -1 && errno != ECHILD)
-        unix_error("waitpid error");
-    return;
-}
-
-void waitfg(pid_t pid)
-{
-    job_t* job;
-    job = getjobpid(job_table,pid);
-    if(job){
-        //sleep
-        while(pid==fgpid(job_table))
-            ;
-    }
-    return;
-}
 
 
-int main()
-{
-    signal(SIGINT, sigint_handler);   /* ctrl-c */
-    signal(SIGTSTP, sigtstp_handler); /* ctrl-z */
-    signal(SIGCHLD, sigchld_handler);
-    while (1)
-    {
-        //printf("loop\n");
-    }
-}
+
+// int main()
+// {
+//     signal(SIGINT, sigint_handler);   /* ctrl-c */
+//     signal(SIGTSTP, sigtstp_handler); /* ctrl-z */
+//     signal(SIGCHLD, sigchld_handler);
+//     while (1)
+//     {
+//         //printf("loop\n");
+//     }
+// }

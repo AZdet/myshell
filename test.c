@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include "test.h"
 #define MAX_LEN 100
 //  
 //

@@ -10,6 +10,9 @@
 #include <unistd.h>
 #include <time.h>
 #include <signal.h>
+#include <errno.h>
+#include "job.h"
+#include "test.h"
 #define MAX_LINE 80 /* The maximum length command */
 #define MAX_CMD_LEN 7
 
@@ -60,6 +63,7 @@ int num_cmd = 0;
 // char *job_table[MAX_JOBS]; // 所有后台工作的信息，格式为“job_num  pid  cmd”
 // int job_num_in_use[MAX_JOBS];
 // int job_num = 0;
+job_t job_table[MAXJOBS];
 
 int is_pipe;
 int is_io_redirect;
@@ -502,7 +506,7 @@ int executeCmd(int cmd_idx, int *ptr_argc, char *argv[], char *envp[])
 
             if (is_background)
             {
-                printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline);
+                printf("[%d] (%d) %s", pid2jid(pid), pid, cmd_argvs[cmd_idx]);
             }
             else
             {
@@ -627,4 +631,102 @@ int main(int argc, char *argv[], char *envp[])
         }
     }
     return 0;
+}
+
+void sigint_handler(int sig)
+{
+    pid_t pid = fgpid(job_table);
+
+    if (pid != 0)
+    {
+        kill(-pid, sig);
+    }
+    return;
+}
+void sigtstp_handler(int sig)
+{
+    pid_t pid = fgpid(job_table);
+    //check for valid pid
+    if (pid != 0)
+    {
+        kill(-pid, sig);
+    }
+    return;
+}
+void sigchld_handler(int sig)
+{
+    int status;
+    pid_t pid;
+
+    while ((pid = waitpid(fgpid(job_table), &status, WNOHANG | WUNTRACED)) > 0)
+    {
+        if (WIFSTOPPED(status))
+        {
+            //change state if stopped
+            job_t *job = getjobpid(job_table, pid);
+            if (!job){
+
+            }
+            job->state = ST;
+            int jid = pid2jid(pid);
+            printf("Job [%d] (%d) Stopped by signal %d\n", jid, pid, WSTOPSIG(status));
+        }
+        else if (WIFSIGNALED(status))
+        {
+            //delete is signaled
+            int jid = pid2jid(pid);
+            printf("Job [%d] (%d) terminated by signal %d\n", jid, pid, WTERMSIG(status));
+            deletejob(job_table, pid);
+        }
+        else if (WIFEXITED(status))
+        { // child terminated normally
+            //exited
+            deletejob(job_table, pid);
+        }
+    }
+    return;
+}
+
+void sigchld_handler(int sig)
+{
+    pid_t pid;
+    int status;
+    job_t *job;
+
+    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0)
+    { // wait
+        if (WIFSIGNALED(status))
+        { // child process was terminated by a signal
+            if (WTERMSIG(status) == SIGINT)
+            { // the number of the signal that caused the child process to terminate
+                printf("Job [%d] (%d) terminated by signal %d\n",
+                       pid2jid(pid), pid, WTERMSIG(status));
+                deletejob(job_table, pid);
+            }
+        }
+        else if (WIFSTOPPED(status))
+        { // the child process was stopped by delivery of a signal;
+            job = getjobpid(job_table, pid);
+            job->state = ST;
+            printf("Job [%d] (%d) stopped by signal %d\n",
+                   pid2jid(pid), pid, WSTOPSIG(status));
+        }
+        else
+            deletejob(job_table, pid);
+    }
+    if (pid == -1 && errno != ECHILD)
+        unix_error("waitpid error");
+    return;
+}
+
+void waitfg(pid_t pid)
+{
+    job_t* job;
+    job = getjobpid(job_table,pid);
+    if(job){
+        //sleep
+        while(pid==fgpid(job_table))
+            ;
+    }
+    return;
 }

@@ -158,7 +158,7 @@ void listjob_table(job_t *job_table)
                 printf("listjob_table: Internal error: job[%d].state=%d ",
                        i, job_table[i].state);
             }
-            printf("%s", job_table[i].cmdline);
+            printf("%s\n", job_table[i].cmdline);
         }
     }
 }

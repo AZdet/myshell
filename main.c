@@ -75,6 +75,19 @@ int is_error;
 
 int should_run = 1; /* flag to determine when to exit program */
 
+typedef void handler_t(int);
+handler_t *Signal(int signum, handler_t *handler) 
+{
+    struct sigaction action, old_action;
+
+    action.sa_handler = handler;  
+    sigemptyset(&action.sa_mask); /* block sigs of type being handled */
+    action.sa_flags = SA_RESTART; /* restart syscalls if possible */
+
+    if (sigaction(signum, &action, &old_action) < 0)
+        perror("Signal error");
+    return (old_action.sa_handler);
+}
 
 int is_internal_cmd(char *cmd){
     int i, len = sizeof(Internal_CMDS) / sizeof(Internal_CMDS[0]);
@@ -89,21 +102,31 @@ int is_internal_cmd(char *cmd){
 void sigint_handler(int sig)
 {
     pid_t pid = fgpid(job_table);
-    printf("pid:%d\n", pid);
+    
     if (pid != 0)
     {
         kill(-pid, sig);
         printf("pid: %d, int\n", pid);
+    }
+    else{
+        printf(" catch Ctrl+C without any jobs\n");
+        printf("%s >", getcwd(NULL, 0));
+        fflush(stdout);
     }
     return;
 }
 void sigtstp_handler(int sig)
 {
     pid_t pid = fgpid(job_table);
-    //check for valid pid
+    
     if (pid != 0)
     {
         kill(-pid, sig);
+    }
+    else{
+        printf(" catch Ctrl+Z without any jobs\n");
+        printf("%s >", getcwd(NULL, 0));
+        fflush(stdout);
     }
     return;
 }
@@ -155,12 +178,13 @@ void waitfg(pid_t pid)
 
 
 void init(){
-    signal(SIGINT, sigint_handler);   /* ctrl-c */
-    signal(SIGTSTP, sigtstp_handler); /* ctrl-z */
-    signal(SIGCHLD, sigchld_handler);
+    Signal(SIGINT, sigint_handler);   /* ctrl-c */
+    Signal(SIGTSTP, sigtstp_handler); /* ctrl-z */
+    Signal(SIGCHLD, sigchld_handler);
     /*设置命令提示符*/
     printf("myshell\n");
     fflush(stdout);
+    initjob_table(job_table);
     /*设置默认的搜索路径*/
     //setpath("/bin:/usr/bin");
     /*……*/
@@ -527,8 +551,10 @@ int readCmd()
     char *tok, *next_tok;
     int num_arg = 0;
     printf("%s >", getcwd(NULL, 0));
-    fgets(cmd, MAX_LINE, stdin);
-    cmd[strlen(cmd)-1] = '\0';
+    while (fgets(cmd, MAX_LINE, stdin) == NULL || !strcmp(cmd, "\n"))
+        printf("%s >", getcwd(NULL, 0));;
+    if (strlen(cmd) > 0)
+        cmd[strlen(cmd)-1] = '\0';
     //memset(cmd_argvs, 0, sizeof(cmd_argvs)); //sizeof(char) * MAX_LINE * (MAX_LINE + 1));
     //int len = strlen(cmd);
     num_cmd = 0;
@@ -662,7 +688,7 @@ int executeCmd(int cmd_idx, int *ptr_argc, char *argv[], char *envp[])
 
             if (is_background)
             {
-                printf("[%d] (%d) %s", pid2jid(job_table, pid), pid, cmd_argvs[cmd_idx][0]);
+                printf("[%d] (%d) %s\n", pid2jid(job_table, pid), pid, cmd_argvs[cmd_idx][0]);
             }
             else
             {
@@ -699,36 +725,38 @@ int main(int argc, char *argv[], char *envp[])
         readCmd();
         if (is_error)
             continue;
-        executeCmd(i, &argc, argv, envp);
-        // tmp_in = dup(0);
-        // tmp_out = dup(1);
-        // if (infile == -1)
-        //     infile = dup(tmp_in);
-        // for (i = 0; i < num_cmd; i++)
-        // {
-        //     dup2(infile, 0);
-        //     close(infile);
-        //     if (i == num_cmd - 1)
-        //     {
-        //         if (outfile == -1)
-        //             outfile = dup(tmp_out);
-        //     }
-        //     else
-        //     {
-        //         int fdpipe[2];
-        //         pipe(fdpipe);
-        //         infile = fdpipe[0];
-        //         outfile = fdpipe[1];
-        //     }
-        //     dup2(outfile, 1);
-        //     close(outfile);
+        // fflush(stdout);
+        // executeCmd(i, &argc, argv, envp);
+        // fflush(stdout);
+        tmp_in = dup(0);
+        tmp_out = dup(1);
+        if (infile == -1)
+            infile = dup(tmp_in);
+        for (i = 0; i < num_cmd; i++)
+        {
+            dup2(infile, 0);
+            close(infile);
+            if (i == num_cmd - 1)
+            {
+                if (outfile == -1)
+                    outfile = dup(tmp_out);
+            }
+            else
+            {
+                int fdpipe[2];
+                pipe(fdpipe);
+                infile = fdpipe[0];
+                outfile = fdpipe[1];
+            }
+            dup2(outfile, 1);
+            close(outfile);
 
-        //     // 完成IO定向，执行子命令
-        //     executeCmd(i, &argc, argv, envp);
+            // 完成IO定向，执行子命令
+            executeCmd(i, &argc, argv, envp);
 
-        //     dup2(tmp_in, 0);
-        //     dup2(tmp_out, 1);
-        // }
+            dup2(tmp_in, 0);
+            dup2(tmp_out, 1);
+        }
     }
     return 0;
 }

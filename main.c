@@ -1,16 +1,17 @@
+#define _GNU_SOURCE
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <stdlib.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <dirent.h>
 #include <fcntl.h>
-#include <unistd.h>
 #include <time.h>
 #include <signal.h>
 #include <errno.h>
+#include <ctype.h>
 #include "job.h"
 #include "test.h"
 #define MAX_LINE 80 /* The maximum length command */
@@ -74,26 +75,173 @@ int is_error;
 
 int should_run = 1; /* flag to determine when to exit program */
 
-// void init(){
-//     signal(SIGINT, sigint_handler);   /* ctrl-c */
-//     signal(SIGTSTP, sigtstp_handler); /* ctrl-z */
-//     signal(SIGCHLD, sigchld_handler);
-//     /*设置命令提示符*/
-//     printf("myshell>");
-//     fflush(stdout);
-//     /*设置默认的搜索路径*/
-//     setpath("/bin:/usr/bin");
-//     /*……*/
-// }
+
+int is_internal_cmd(char *cmd){
+    int i, len = sizeof(Internal_CMDS) / sizeof(Internal_CMDS[0]);
+    for (i = 0; i < len; i++){
+        if (!strcmp(Internal_CMDS[i], cmd))
+            return 1;
+    }
+    return 0;
+}
+
+
+void sigint_handler(int sig)
+{
+    pid_t pid = fgpid(job_table);
+    printf("pid:%d\n", pid);
+    if (pid != 0)
+    {
+        kill(-pid, sig);
+        printf("pid: %d, int\n", pid);
+    }
+    return;
+}
+void sigtstp_handler(int sig)
+{
+    pid_t pid = fgpid(job_table);
+    //check for valid pid
+    if (pid != 0)
+    {
+        kill(-pid, sig);
+    }
+    return;
+}
+void sigchld_handler(int sig)
+{
+    int status;
+    pid_t pid;
+
+    while ((pid = waitpid(fgpid(job_table), &status, WNOHANG | WUNTRACED)) > 0)
+    {
+        if (WIFSTOPPED(status))
+        {
+            //change state if stopped
+            job_t *job = getjobpid(job_table, pid);
+            if (!job){
+
+            }
+            job->state = ST;
+            int jid = pid2jid(job_table, pid);
+            printf("Job [%d] (%d) Stopped by signal %d\n", jid, pid, WSTOPSIG(status));
+        }
+        else if (WIFSIGNALED(status))
+        {
+            //delete is signaled
+            int jid = pid2jid(job_table, pid);
+            printf("Job [%d] (%d) terminated by signal %d\n", jid, pid, WTERMSIG(status));
+            deletejob(job_table, pid);
+        }
+        else if (WIFEXITED(status))
+        { // child terminated normally
+            //exited
+            deletejob(job_table, pid);
+        }
+    }
+    return;
+}
+
+void waitfg(pid_t pid)
+{
+    job_t* job;
+    job = getjobpid(job_table,pid);
+    if(job){
+        //sleep
+        while(pid==fgpid(job_table))
+            ;
+    }
+    return;
+}
+
+
+void init(){
+    signal(SIGINT, sigint_handler);   /* ctrl-c */
+    signal(SIGTSTP, sigtstp_handler); /* ctrl-z */
+    signal(SIGCHLD, sigchld_handler);
+    /*设置命令提示符*/
+    printf("myshell\n");
+    fflush(stdout);
+    /*设置默认的搜索路径*/
+    //setpath("/bin:/usr/bin");
+    /*……*/
+}
+
+void setpath(char *newpath){
+    char *path = getenv("PATH");
+    path = strcat(path, ":");
+    setenv("PATH", strcat(path, newpath), 1);
+}
+
+int do_bgfg(char *argv[])
+{
+    pid_t pid;
+    job_t *job;
+    int jid;
+    if (!argv[1])
+    {
+        fprintf(stderr, "Error: unset takes one argument!\n");
+        is_error = 1;
+        return 1;
+    }
+    if (argv[1][0] == '%')
+    {
+        jid = atoi(&argv[1][1]);
+        //get job
+        job = getjobjid(job_table, jid);
+        if (job == NULL)
+        {
+            printf("%s: No such job\n", argv[1]);
+            return 1;
+        }
+        else
+        {
+            //get the pid if a valid job for later to kill
+            pid = job->pid;
+        }
+    }
+    // if it is a pid
+    else if (isdigit(argv[1][0])) 
+    {
+        //get pid
+        pid = atoi(argv[1]);
+        //get job
+        job = getjobpid(job_table, pid);
+        if (job == NULL)
+        {
+            printf("(%d): No such process\n", pid);
+            return 1;
+        }
+    }
+    else
+    {
+        printf("%s: argument must be a PID or %%jobid\n", argv[0]);
+        return 1;
+    }
+    // set job and pid
+    kill(-pid, SIGCONT);
+    if (!strcmp(argv[0], "fg"))
+    {
+        job->state = FG;
+        waitfg(job->pid);
+    }
+    else
+    {
+        job->state = BG;
+        printf("[%d] (%d) %s", job->jid, job->pid, job->cmdline);
+    }
+    return 0;
+}
+
 
 int do_internal_cmd(char **cmd_argv, int *ptr_argc, char *argv[], char *envp[])
 {
     int i, ret;
     if (!strcmp(cmd_argv[0], "cd"))
     {
+        char *cur_path;
         if (!cmd_argv[1])
         {
-            char *cur_path = getcwd(NULL, 0);
+            cur_path = getcwd(NULL, 0);
             printf("current path is: %s\n", cur_path);
             free(cur_path);
         }
@@ -101,23 +249,25 @@ int do_internal_cmd(char **cmd_argv, int *ptr_argc, char *argv[], char *envp[])
         {
             if (cmd_argv[2])
             {
-                fprintf(stderr, "Error: cd only takes one argument!");
+                fprintf(stderr, "Error: cd only takes one argument!\n");
                 is_error = 1;
                 return 1;
             }
             ret = chdir(cmd_argv[1]);
+            cur_path = getcwd(NULL, 0);
+            setenv("PWD", cur_path, 1);
         }
-        if (!ret)
+        if (ret)
         {
             perror("chdir");
             return 1;
         }
     }
-    else if (!strcmp(cmd_argv[0], "cls"))
+    else if (!strcmp(cmd_argv[0], "clr"))
     {
         if (cmd_argv[1])
         {
-            fprintf(stderr, "Error: cls takes no argument!");
+            fprintf(stderr, "Error: cls takes no argument!\n");
             is_error = 1;
             return 1;
         }
@@ -127,13 +277,13 @@ int do_internal_cmd(char **cmd_argv, int *ptr_argc, char *argv[], char *envp[])
     {
         if (!cmd_argv[1])
         {
-            fprintf(stderr, "Error: dir takes one argument!");
+            fprintf(stderr, "Error: dir takes one argument!\n");
             is_error = 1;
             return 1;
         }
         else if (cmd_argv[2])
         {
-            fprintf(stderr, "Error: dir takes only one argument!");
+            fprintf(stderr, "Error: dir takes only one argument!\n");
             is_error = 1;
             return 1;
         }
@@ -156,23 +306,23 @@ int do_internal_cmd(char **cmd_argv, int *ptr_argc, char *argv[], char *envp[])
     {
         if (!cmd_argv[1])
         {
-            fprintf(stderr, "Error: echo takes one argument!");
+            fprintf(stderr, "Error: echo takes one argument!\n");
             is_error = 1;
             return 1;
         }
         else if (cmd_argv[2])
         {
-            fprintf(stderr, "Error: echo takes only one argument!");
+            fprintf(stderr, "Error: echo takes only one argument!\n");
             is_error = 1;
             return 1;
         }
-        printf(cmd_argv[1]);
+        puts(cmd_argv[1]);
     }
     else if (!strcmp(cmd_argv[0], "environ"))
     {
         if (cmd_argv[1])
         {
-            fprintf(stderr, "Error: help takes no argument!");
+            fprintf(stderr, "Error: help takes no argument!\n");
             is_error = 1;
             return 1;
         }
@@ -186,13 +336,13 @@ int do_internal_cmd(char **cmd_argv, int *ptr_argc, char *argv[], char *envp[])
     {
         if (!cmd_argv[1])
         {
-            fprintf(stderr, "Error: umask takes one argument!");
+            fprintf(stderr, "Error: exit takes one argument!\n");
             is_error = 1;
             return 1;
         }
         else if (cmd_argv[2])
         {
-            fprintf(stderr, "Error: umask takes only one argument!");
+            fprintf(stderr, "Error: exit takes only one argument!\n");
             is_error = 1;
             return 1;
         }
@@ -200,7 +350,7 @@ int do_internal_cmd(char **cmd_argv, int *ptr_argc, char *argv[], char *envp[])
         ret = sscanf(cmd_argv[1], "%d", &ret_code);
         if (ret != 1)
         {
-            fprintf(stderr, "Error: invalid return code after exit!");
+            fprintf(stderr, "Error: invalid return code after exit!\n");
             is_error = 1;
             return 1;
         }
@@ -210,7 +360,7 @@ int do_internal_cmd(char **cmd_argv, int *ptr_argc, char *argv[], char *envp[])
     {
         if (cmd_argv[1])
         {
-            fprintf(stderr, "Error: help takes no argument!");
+            fprintf(stderr, "Error: help takes no argument!\n");
             is_error = 1;
             return 1;
         }
@@ -220,7 +370,7 @@ int do_internal_cmd(char **cmd_argv, int *ptr_argc, char *argv[], char *envp[])
     {
         if (cmd_argv[1])
         {
-            fprintf(stderr, "Error: pwd takes no argument!");
+            fprintf(stderr, "Error: pwd takes no argument!\n");
             is_error = 1;
             return 1;
         }
@@ -232,7 +382,7 @@ int do_internal_cmd(char **cmd_argv, int *ptr_argc, char *argv[], char *envp[])
     {
         if (cmd_argv[1])
         {
-            fprintf(stderr, "Error: quit takes no argument!");
+            fprintf(stderr, "Error: quit takes no argument!\n");
             is_error = 1;
             return 1;
         }
@@ -242,7 +392,7 @@ int do_internal_cmd(char **cmd_argv, int *ptr_argc, char *argv[], char *envp[])
     {
         if (cmd_argv[1])
         {
-            fprintf(stderr, "Error: time takes no argument!");
+            fprintf(stderr, "Error: time takes no argument!\n");
             is_error = 1;
             return 1;
         }
@@ -250,19 +400,20 @@ int do_internal_cmd(char **cmd_argv, int *ptr_argc, char *argv[], char *envp[])
         struct tm *timeinfo;
         time(&rawtime);
         timeinfo = localtime(&rawtime);
-        printf("Current local time and date: %s", asctime(timeinfo));
+        printf("%s", asctime(timeinfo));
     }
     else if (!strcmp(cmd_argv[0], "umask"))
     {
         if (!cmd_argv[1])
         {
-            fprintf(stderr, "Error: umask takes one argument!");
-            is_error = 1;
-            return 1;
+            mode_t mode = umask(0000);
+            printf("%o\n", mode);
+            umask(mode);
+            return 0;
         }
         else if (cmd_argv[2])
         {
-            fprintf(stderr, "Error: umask takes only one argument!");
+            fprintf(stderr, "Error: umask takes only one argument!\n");
             is_error = 1;
             return 1;
         }
@@ -275,7 +426,7 @@ int do_internal_cmd(char **cmd_argv, int *ptr_argc, char *argv[], char *envp[])
         }
         else
         {
-            fprintf(stderr, "Error: invalid umask mode!");
+            fprintf(stderr, "Error: invalid umask mode!\n");
             is_error = 1;
             return 1;
         }
@@ -297,18 +448,18 @@ int do_internal_cmd(char **cmd_argv, int *ptr_argc, char *argv[], char *envp[])
     {
         if (!cmd_argv[1] || !cmd_argv[2])
         {
-            fprintf(stderr, "Error: set takes two arguments!");
+            fprintf(stderr, "Error: set takes two arguments!\n");
             is_error = 1;
             return 1;
         }
         else if (cmd_argv[3])
         {
-            fprintf(stderr, "Error: set takes only two arguments!");
+            fprintf(stderr, "Error: set takes only two arguments!\n");
             is_error = 1;
             return 1;
         }
         int ret = setenv(cmd_argv[1], cmd_argv[2], 1); // overwrite = 1
-        if (!ret)
+        if (ret)
         {
             perror("setenv");
             is_error = 1;
@@ -320,7 +471,7 @@ int do_internal_cmd(char **cmd_argv, int *ptr_argc, char *argv[], char *envp[])
         // get $#
         // n+1 ... # --> 1 ... #-n
         int shift_pos = 1, ret, i;
-        if (argv[1])
+        if (cmd_argv[1])
         {
             ret = sscanf(cmd_argv[1], "%d", &shift_pos);
             if (ret != 1 || shift_pos <= 0)
@@ -344,24 +495,24 @@ int do_internal_cmd(char **cmd_argv, int *ptr_argc, char *argv[], char *envp[])
     }
     else if (!strcmp(cmd_argv[0], "test"))
     {
-        do_test(cmd_argv);
+        //do_test(cmd_argv);
     }
     else if (!strcmp(cmd_argv[0], "unset"))
     {
         if (!cmd_argv[1])
         {
-            fprintf(stderr, "Error: unset takes one argument!");
+            fprintf(stderr, "Error: unset takes one argument!\n");
             is_error = 1;
             return 1;
         }
         else if (cmd_argv[2])
         {
-            fprintf(stderr, "Error: unset takes only one argument!");
+            fprintf(stderr, "Error: unset takes only one argument!\n");
             is_error = 1;
             return 1;
         }
         int ret = unsetenv(cmd_argv[1]);
-        if (!ret)
+        if (ret)
         {
             perror("unsetenv");
             is_error = 1;
@@ -375,8 +526,10 @@ int readCmd()
 {
     char *tok, *next_tok;
     int num_arg = 0;
-    printf(">");
+    printf("%s >", getcwd(NULL, 0));
     fgets(cmd, MAX_LINE, stdin);
+    cmd[strlen(cmd)-1] = '\0';
+    //memset(cmd_argvs, 0, sizeof(cmd_argvs)); //sizeof(char) * MAX_LINE * (MAX_LINE + 1));
     //int len = strlen(cmd);
     num_cmd = 0;
     is_pipe = is_io_redirect = is_background = is_error = 0;
@@ -458,6 +611,9 @@ int readCmd()
             cmd_argvs[num_cmd][num_arg++] = tok;
         }
     }
+    cmd_argvs[num_cmd][num_arg] = NULL;
+    num_cmd++;
+    
 }
 
 int executeCmd(int cmd_idx, int *ptr_argc, char *argv[], char *envp[])
@@ -506,7 +662,7 @@ int executeCmd(int cmd_idx, int *ptr_argc, char *argv[], char *envp[])
 
             if (is_background)
             {
-                printf("[%d] (%d) %s", pid2jid(pid), pid, cmd_argvs[cmd_idx]);
+                printf("[%d] (%d) %s", pid2jid(job_table, pid), pid, cmd_argvs[cmd_idx][0]);
             }
             else
             {
@@ -515,64 +671,7 @@ int executeCmd(int cmd_idx, int *ptr_argc, char *argv[], char *envp[])
         }
     }
 }
-void do_fgbg(char *argv[])
-{
-    pid_t pid;
-    job_t *job;
-    int jid;
-    if (!argv[1])
-    {
-        fprintf(stderr, "Error: unset takes one argument!");
-        is_error = 1;
-        return 1;
-    }
-    if (argv[1][0] == '%')
-    {
-        jid = atoi(&argv[1][1]);
-        //get job
-        job = getjobjid(job_table, jid);
-        if (job == NULL)
-        {
-            printf("%s: No such job\n", argv[1]);
-            return;
-        }
-        else
-        {
-            //get the pid if a valid job for later to kill
-            pid = job->pid;
-        }
-    }
-    // if it is a pid
-    else if (isdigit(argv[1][0]))
-    {
-        //get pid
-        pid = atoi(argv[1]);
-        //get job
-        job = getjobpid(job_table, pid);
-        if (job == NULL)
-        {
-            printf("(%d): No such process\n", pid);
-            return;
-        }
-    }
-    else
-    {
-        printf("%s: argument must be a PID or %%jobid\n", argv[0]);
-        return;
-    }
-    // set job and pid
-    kill(-pid, SIGCONT);
-    if (!strcmp(argv[0], "fg"))
-    {
-        job->state = FG;
-        waitfg(job->pid);
-    }
-    else
-    {
-        job->state = BG;
-        printf("[%d] (%d) %s", job->jid, job->pid, job->cmdline);
-    }
-}
+
 /*
 bg fg jobs
 cd clr dir echo exec exit environ help pwd quit time umask
@@ -584,7 +683,7 @@ int main(int argc, char *argv[], char *envp[])
 
     int i;
     int tmp_in, tmp_out;
-    //init();
+    init();
     while (should_run)
     {
         /**
@@ -600,133 +699,37 @@ int main(int argc, char *argv[], char *envp[])
         readCmd();
         if (is_error)
             continue;
-        tmp_in = dup(0);
-        tmp_out = dup(1);
-        if (infile == -1)
-            infile = dup(tmp_in);
-        for (i = 0; i < num_cmd; i++)
-        {
-            dup2(infile, 0);
-            close(infile);
-            if (i == num_cmd - 1)
-            {
-                if (outfile == -1)
-                    outfile = dup(tmp_out);
-            }
-            else
-            {
-                int fdpipe[2];
-                pipe(fdpipe);
-                infile = fdpipe[0];
-                outfile = fdpipe[1];
-            }
-            dup2(outfile, 1);
-            close(outfile);
+        executeCmd(i, &argc, argv, envp);
+        // tmp_in = dup(0);
+        // tmp_out = dup(1);
+        // if (infile == -1)
+        //     infile = dup(tmp_in);
+        // for (i = 0; i < num_cmd; i++)
+        // {
+        //     dup2(infile, 0);
+        //     close(infile);
+        //     if (i == num_cmd - 1)
+        //     {
+        //         if (outfile == -1)
+        //             outfile = dup(tmp_out);
+        //     }
+        //     else
+        //     {
+        //         int fdpipe[2];
+        //         pipe(fdpipe);
+        //         infile = fdpipe[0];
+        //         outfile = fdpipe[1];
+        //     }
+        //     dup2(outfile, 1);
+        //     close(outfile);
 
-            // 完成IO定向，执行子命令
-            executeCmd(i, &argc, argv, envp);
+        //     // 完成IO定向，执行子命令
+        //     executeCmd(i, &argc, argv, envp);
 
-            dup2(tmp_in, 0);
-            dup2(tmp_out, 1);
-        }
+        //     dup2(tmp_in, 0);
+        //     dup2(tmp_out, 1);
+        // }
     }
     return 0;
 }
 
-void sigint_handler(int sig)
-{
-    pid_t pid = fgpid(job_table);
-
-    if (pid != 0)
-    {
-        kill(-pid, sig);
-    }
-    return;
-}
-void sigtstp_handler(int sig)
-{
-    pid_t pid = fgpid(job_table);
-    //check for valid pid
-    if (pid != 0)
-    {
-        kill(-pid, sig);
-    }
-    return;
-}
-void sigchld_handler(int sig)
-{
-    int status;
-    pid_t pid;
-
-    while ((pid = waitpid(fgpid(job_table), &status, WNOHANG | WUNTRACED)) > 0)
-    {
-        if (WIFSTOPPED(status))
-        {
-            //change state if stopped
-            job_t *job = getjobpid(job_table, pid);
-            if (!job){
-
-            }
-            job->state = ST;
-            int jid = pid2jid(pid);
-            printf("Job [%d] (%d) Stopped by signal %d\n", jid, pid, WSTOPSIG(status));
-        }
-        else if (WIFSIGNALED(status))
-        {
-            //delete is signaled
-            int jid = pid2jid(pid);
-            printf("Job [%d] (%d) terminated by signal %d\n", jid, pid, WTERMSIG(status));
-            deletejob(job_table, pid);
-        }
-        else if (WIFEXITED(status))
-        { // child terminated normally
-            //exited
-            deletejob(job_table, pid);
-        }
-    }
-    return;
-}
-
-void sigchld_handler(int sig)
-{
-    pid_t pid;
-    int status;
-    job_t *job;
-
-    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0)
-    { // wait
-        if (WIFSIGNALED(status))
-        { // child process was terminated by a signal
-            if (WTERMSIG(status) == SIGINT)
-            { // the number of the signal that caused the child process to terminate
-                printf("Job [%d] (%d) terminated by signal %d\n",
-                       pid2jid(pid), pid, WTERMSIG(status));
-                deletejob(job_table, pid);
-            }
-        }
-        else if (WIFSTOPPED(status))
-        { // the child process was stopped by delivery of a signal;
-            job = getjobpid(job_table, pid);
-            job->state = ST;
-            printf("Job [%d] (%d) stopped by signal %d\n",
-                   pid2jid(pid), pid, WSTOPSIG(status));
-        }
-        else
-            deletejob(job_table, pid);
-    }
-    if (pid == -1 && errno != ECHILD)
-        unix_error("waitpid error");
-    return;
-}
-
-void waitfg(pid_t pid)
-{
-    job_t* job;
-    job = getjobpid(job_table,pid);
-    if(job){
-        //sleep
-        while(pid==fgpid(job_table))
-            ;
-    }
-    return;
-}

@@ -2,26 +2,10 @@
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <string.h>
 #include "job.h"
 
 int nextjid = 1;
-
-typedef enum
-{
-    UNDEF,
-    FG,
-    BG,
-    ST
-} JOBSTATE;
-
-typedef struct
-{
-    pid_t pid;
-    int jid;
-    JOBSTATE state;
-    char cmdline[DISPLAY_LEN];
-} job_t;
-
 
 /* clearjob - Clear the entries in a job struct */
 void clearjob(job_t *job)
@@ -135,7 +119,7 @@ job_t *getjobjid(job_t *job_table, int jid)
 }
 
 /* pid2jid - Map process ID to job ID */
-int pid2jid(pid_t pid)
+int pid2jid(job_t *job_table, pid_t pid)
 {
     int i;
 

@@ -1,0 +1,20 @@
+CC=gcc
+CFLAGS=-Wall -O2 
+OBJS=main.o job.o
+
+debug:
+	$(CC) $(CFLAGS) -g main.c job.c -o debug
+
+main:
+	$(CC) $(CFLAGS) main.c job.c -o main
+
+test:
+	$(CC) $(CFLAGS) draft.c -o draft
+# main: $(OBJS)
+# 	$(CC) $(CFLAGS) -o main $(OBJS)
+# job.o: job.c job.h
+# 	$(CC) $(CFLAGS) job.c -o job.o
+# main.o: main.c job.h
+# 	$(CC) $(CFLAGS) main.c -o main.o
+clean:
+	rm -f *.o

@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include "test.h"
-#define MAX_LEN 100
 //
 //
 char **terms;
@@ -29,7 +29,7 @@ char *checkNextStr()
 }
 int eval_term()
 {
-    char *str, str2, str3;
+    char *str, *str2, *str3;
     int ret;
     struct stat buf;
     str = getNextStr();
@@ -59,6 +59,13 @@ int eval_term()
     else if (!strcmp(str, "-r"))
     {
         // access
+        str2 = getNextStr();
+        if (!str2)
+        {
+            fprintf(stderr, "invalid test expression\n");
+            exit(1);
+        }
+        return !access(str2, R_OK);
     }
     else if (!strcmp(str, "-s"))
     {
@@ -69,10 +76,24 @@ int eval_term()
     else if (!strcmp(str, "-w"))
     {
         // access
+        str2 = getNextStr();
+        if (!str2)
+        {
+            fprintf(stderr, "invalid test expression\n");
+            exit(1);
+        }
+        return !access(str2, W_OK);
     }
     else if (!strcmp(str, "-x"))
     {
         // access
+        str2 = getNextStr();
+        if (!str2)
+        {
+            fprintf(stderr, "invalid test expression\n");
+            exit(1);
+        }
+        return !access(str2, X_OK);
     }
     else if (!strcmp(str, "-b"))
     {
@@ -101,6 +122,13 @@ int eval_term()
     else if (!strcmp(str, "-e"))
     { // exists
         // access
+        str2 = getNextStr();
+        if (!str2)
+        {
+            fprintf(stderr, "invalid test expression\n");
+            exit(1);
+        }
+        return !access(str2, F_OK);
     }
     else if (!strcmp(str, "-L"))
     {
@@ -136,27 +164,35 @@ int eval_term()
             str3 = getNextStr();
             if (!strcmp(str2, "-eq"))
             {
+                return atoi(str) == atoi(str3); 
             }
             else if (!strcmp(str2, "-ge"))
             {
+                return atoi(str) >= atoi(str3); 
             }
             else if (!strcmp(str2, "-gt"))
             {
+                return atoi(str) > atoi(str3); 
             }
             else if (!strcmp(str2, "-le"))
             {
+                return atoi(str) <= atoi(str3); 
             }
             else if (!strcmp(str2, "-lt"))
             {
+                return atoi(str) < atoi(str3); 
             }
             else if (!strcmp(str2, "-ne"))
             {
+                return atoi(str) != atoi(str3); 
             }
             else if (!strcmp(str2, "="))
             {
+                return !strcmp(str, str3);
             }
             else if (!strcmp(str2, "!="))
             {
+                return strcmp(str, str3);
             }
         }
     }
@@ -213,24 +249,9 @@ int do_test(char **cmd_argv)
     terms = cmd_argv;
     return eval_expr();
 }
-int main()
-{
-    // char str[MAX_LEN];
-    // gets(str);
-    // puts(getenv(str));
-    // char *tok;
-    // char cmd[MAX_LEN];
-    // printf("%p\n", cmd);
-    // printf(">");
-    // fgets(cmd, MAX_LEN, stdin);
-    // tok = strtok(cmd, " ");
-    // //printf("%p\n", tok);
-    // puts(tok);
-    // while (tok){
-    //     tok = strtok(NULL, " ");
-    //     if (!tok)
-    //         break;
-    //     printf("%p\n", tok);
-    //     puts(tok);
-    // }
-}
+
+// int main()
+// {   
+
+//     printf("res: %d\n", do_test());
+// }

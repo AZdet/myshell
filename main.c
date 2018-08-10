@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -15,33 +14,7 @@
 #include "job.h"
 #include "test.h"
 #define MAX_LINE 80 /* The maximum length command */
-#define MAX_CMD_LEN 7
-
-// typedef enum {
-// // basic functionality
-//     cd,
-//     clr,
-//     dir,
-//     echo,
-//     environ,
-//     help,
-//     pwd,
-//     quit,
-//     time,
-//     umask,
-//     exit,
-// // manage processes
-//     bg,   // 1. add handler for ctrl-z to suspend a process
-//     fg,   // 2. fg put it in foreground, with help of tcsetpgrp
-//     jobs,  // 3. both fg and bg continue the process
-//     exec,
-// // shell programming
-//     set,
-//     shift,
-//     test,
-//     unset
-// }
-// COMMEND;
+#define MAX_CMD_LEN 7 /* The maximum length of a command name */
 
 char Internal_CMDS[][MAX_CMD_LEN + 1] = {"cd", "clr", "dir", "echo",
                                          "environ", "exit", "help", "pwd", "quit", "time", "umask",
@@ -56,14 +29,11 @@ int io_redirect(char *cmd, int cmdlen);                               /*解析�
 int normal_cmd(char *cmd, int cmdlen, int infd, int outfd, int fork); /*执行普通命令*/
 /*其他函数……. */
 
-char cmd[MAX_LINE + 1];                  // + 1 for '\0'，记录总的命令
+char cmd[MAX_LINE + 1];                  // 记录总的命令，+ 1 for '\0'
 char *cmd_argvs[MAX_LINE][MAX_LINE + 1]; // cmd_argvs[i][j]为第i个命令中的第j个参数，其中第0个参数就是命令本身, +1 for NULL
 int argcs[MAX_LINE];                     // argcs[i]为第i个命令的长度
-int num_cmd = 0;
+int num_cmd = 0;                        // 
 
-// char *job_table[MAX_JOBS]; // 所有后台工作的信息，格式为“job_num  pid  cmd”
-// int job_num_in_use[MAX_JOBS];
-// int job_num = 0;
 job_t job_table[MAXJOBS];
 
 int is_pipe;

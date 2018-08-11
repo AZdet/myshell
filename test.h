@@ -1,4 +1,4 @@
-
+/* 执行test命令，处理其后的表达式 */
 #ifndef _TEST_H_
 #define _TEST_H_
 

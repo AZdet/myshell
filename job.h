@@ -1,3 +1,4 @@
+/* job控制相关的数据结构和API定义 */
 #ifndef _JOB_H_
 #define _JOB_H_
 #include <sys/types.h>

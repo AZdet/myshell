@@ -7,7 +7,7 @@
 
 int nextjid = 1;
 
-/* clearjob - Clear the entries in a job struct */
+/* 清除job，把job的值恢复为默认值 */
 void clearjob(job_t *job)
 {
     job->pid = 0;
@@ -16,7 +16,7 @@ void clearjob(job_t *job)
     job->cmdline[0] = '\0';
 }
 
-/* initjob_table - Initialize the job list */
+/* 初始化job_table */
 void initjob_table(job_t *job_table)
 {
     int i;
@@ -25,7 +25,7 @@ void initjob_table(job_t *job_table)
         clearjob(&job_table[i]);
 }
 
-/* maxjid - Returns largest allocated job ID */
+/* 返回当前已经分配的最大jid */
 int maxjid(job_t *job_table)
 {
     int i, max = 0;
@@ -36,7 +36,7 @@ int maxjid(job_t *job_table)
     return max;
 }
 
-/* addjob - Add a job to the job list */
+/* 向job_table新增一个job */
 int addjob(job_t *job_table, pid_t pid, int state, char *cmdline)
 {
     int i;
@@ -57,11 +57,11 @@ int addjob(job_t *job_table, pid_t pid, int state, char *cmdline)
             return 1;
         }
     }
-    printf("Tried to create too many job_table\n");
+    printf("Tried to create too many jobs\n");
     return 0;
 }
 
-/* deletejob - Delete a job whose PID=pid from the job list */
+/* 从job_table里删除对应pid号的job */
 int deletejob(job_t *job_table, pid_t pid)
 {
     int i;
@@ -81,7 +81,7 @@ int deletejob(job_t *job_table, pid_t pid)
     return 0;
 }
 
-/* fgpid - Return PID of current foreground job, 0 if no such job */
+/* 返回当前属于foreground的job的pid，没有的话返回0 */
 pid_t fgpid(job_t *job_table)
 {
     int i;
@@ -92,7 +92,7 @@ pid_t fgpid(job_t *job_table)
     return 0;
 }
 
-/* getjobpid  - Find a job (by PID) on the job list */
+/* 根据pid得到对应的job */
 job_t *getjobpid(job_t *job_table, pid_t pid)
 {
     int i;
@@ -105,7 +105,7 @@ job_t *getjobpid(job_t *job_table, pid_t pid)
     return NULL;
 }
 
-/* getjobjid  - Find a job (by JID) on the job list */
+/* 根据jid得到对应的job */
 job_t *getjobjid(job_t *job_table, int jid)
 {
     int i;
@@ -118,7 +118,7 @@ job_t *getjobjid(job_t *job_table, int jid)
     return NULL;
 }
 
-/* pid2jid - Map process ID to job ID */
+/* 从pid转换为jid */
 int pid2jid(job_t *job_table, pid_t pid)
 {
     int i;
@@ -133,7 +133,7 @@ int pid2jid(job_t *job_table, pid_t pid)
     return 0;
 }
 
-/* listjob_table - Print the job list */
+/* 显示job_table */
 void listjob_table(job_t *job_table)
 {
     int i;
@@ -163,16 +163,3 @@ void listjob_table(job_t *job_table)
     }
 }
 
-
-
-
-// int main()
-// {
-//     signal(SIGINT, sigint_handler);   /* ctrl-c */
-//     signal(SIGTSTP, sigtstp_handler); /* ctrl-z */
-//     signal(SIGCHLD, sigchld_handler);
-//     while (1)
-//     {
-//         //printf("loop\n");
-//     }
-// }

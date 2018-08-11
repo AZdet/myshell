@@ -4,7 +4,7 @@
 #include <sys/stat.h>
 #include "test.h"
 #define MAX_LEN 100
-//
+// 采用递归下降的方法处理test的表达式
 //
 char **terms;
 int idx = 1;
